@@ -1,3 +1,5 @@
+![Banner](banner.png)
+
 # net-dhcp-discover
 Performs DHCP discovery to identify rogue DHCP servers on the network.  Uses scapy for packet crafting and analysis. - Focused on Basic network operations
 
