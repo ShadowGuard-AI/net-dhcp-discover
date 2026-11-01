@@ -41,6 +41,10 @@ def discover_dhcp(interface, timeout):
     dhcp_servers = []
 
     # Create a DHCP Discover packet
+    # The chaddr below is fixed bytes, not the MAC of the interface I send
+    # from. A server that only answers the real client hardware address
+    # will ignore this, and I accept that gap in exchange for one packet
+    # shape that works the same on every host.
     dhcp_discover = Ether(dst="ff:ff:ff:ff:ff:ff")/IP(dst="255.255.255.255")/UDP(sport=68, dport=67)/BOOTP(chaddr=b"\x00\x0c\x29\x00\x00\x00")/DHCP(options=[("message-type","discover"), "end"])
 
     try:
@@ -50,12 +54,23 @@ def discover_dhcp(interface, timeout):
 
         # Sniff for DHCP Offer packets
         logging.info(f"Sniffing for DHCP Offer packets on interface {interface} for {timeout} seconds...")
+        # I start sniffing only after sendp returns, so a very fast offer can
+        # arrive in the gap and be missed. The filter also takes any traffic to
+        # UDP port 68, not just replies to my discover: I set no transaction ID
+        # on the request, so there is nothing to match replies against.
         responses = sniff(filter="udp and port 68", iface=interface, timeout=timeout)
 
         # Process the responses
         for packet in responses:
+            # This assumes the first DHCP option is the message type. An offer
+            # whose options arrive in another order is skipped, and a packet with
+            # an empty options list raises here and ends the run through the
+            # generic handler below.
             if DHCP in packet and packet[DHCP].options[0][1] == 2:  # DHCP Offer
                 server_ip = packet[IP].src
+                # I dedupe on source IP alone. Two offers from one address arriving by
+                # different relays or with different lease offers collapse into a
+                # single entry, which is all a server census needs.
                 if server_ip not in dhcp_servers:
                     dhcp_servers.append(server_ip)
                     logging.info(f"Found DHCP server: {server_ip}")
